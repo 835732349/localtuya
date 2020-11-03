@@ -1,4 +1,5 @@
 """Config flow for LocalTuya integration integration."""
+import errno
 import logging
 from importlib import import_module
 
@@ -202,7 +203,7 @@ class LocaltuyaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self.entities = []
 
     async def async_step_user(self, user_input=None):
-        """Handle initial step."""
+        """Handle the initial step."""
         errors = {}
         if user_input is not None:
             if user_input[DISCOVERED_DEVICE] != CUSTOM_DEVICE:
@@ -210,10 +211,22 @@ class LocaltuyaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return await self.async_step_basic_info()
 
         # Use cache if available or fallback to manual discovery
-        if DOMAIN in self.hass.data:
-            devices = self.hass.data[DOMAIN][DATA_DISCOVERY].devices
+        devices = {}
+        data = self.hass.data.get(DOMAIN)
+        if data and DATA_DISCOVERY in data:
+            devices = data[DATA_DISCOVERY].devices
         else:
-            devices = await discover()
+            try:
+                devices = await discover()
+            except OSError as ex:
+                if ex.errno == errno.EADDRINUSE:
+                    errors["base"] = "address_in_use"
+                else:
+                    errors["base"] = "discovery_failed"
+            except Exception:
+                _LOGGER.exception("discovery failed")
+                errors["base"] = "discovery_failed"
+
         self.devices = {
             ip: dev
             for ip, dev in devices.items()
